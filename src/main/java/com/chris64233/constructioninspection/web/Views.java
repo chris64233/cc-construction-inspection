@@ -1,9 +1,11 @@
 package com.chris64233.constructioninspection.web;
 
+import com.chris64233.constructioninspection.domain.Amendment;
 import com.chris64233.constructioninspection.domain.ConstructionStage;
 import com.chris64233.constructioninspection.domain.InspectionItemDefinition;
 import com.chris64233.constructioninspection.domain.InspectionRecord;
 import com.chris64233.constructioninspection.domain.Permit;
+import com.chris64233.constructioninspection.domain.PlanVersion;
 import com.chris64233.constructioninspection.domain.Rectification;
 import com.chris64233.constructioninspection.domain.StopWorkOrder;
 import com.chris64233.constructioninspection.domain.WorkVersion;
@@ -17,9 +19,10 @@ public final class Views {
     private Views() {
     }
 
-    public record PermitView(Long id, String name, String status, Instant createdAt) {
+    public record PermitView(Long id, String name, String status, int currentPlanVersion, Instant createdAt) {
         public static PermitView of(Permit p) {
-            return new PermitView(p.getId(), p.getName(), p.getStatus().name(), p.getCreatedAt());
+            return new PermitView(p.getId(), p.getName(), p.getStatus().name(),
+                    p.getCurrentPlanVersionNumber(), p.getCreatedAt());
         }
     }
 
@@ -37,10 +40,11 @@ public final class Views {
         }
     }
 
-    public record VersionView(Long id, int versionNumber, String reason, Instant createdAt,
-                              List<RecordView> records) {
+    public record VersionView(Long id, int versionNumber, String reason, Integer planVersionNumber,
+                              Instant createdAt, List<RecordView> records) {
         public static VersionView of(WorkVersion v, List<InspectionRecord> records) {
-            return new VersionView(v.getId(), v.getVersionNumber(), v.getReason().name(), v.getCreatedAt(),
+            return new VersionView(v.getId(), v.getVersionNumber(), v.getReason().name(),
+                    v.getPlanVersion().getVersionNumber(), v.getCreatedAt(),
                     records.stream().map(RecordView::of).toList());
         }
     }
@@ -70,6 +74,24 @@ public final class Views {
         public static StopWorkOrderView of(StopWorkOrder o) {
             return new StopWorkOrderView(o.getId(), o.getReason(), o.getStatus().name(),
                     o.getIssuedAt(), o.getLiftedAt());
+        }
+    }
+
+    public record AmendmentView(Long id, Long permitId, String description, String status,
+                                List<Long> affectedStageIds, Integer planVersionNumber,
+                                Instant createdAt, Instant approvedAt) {
+        public static AmendmentView of(Amendment a, PlanVersion planVersion) {
+            return new AmendmentView(a.getId(), a.getPermit().getId(), a.getDescription(), a.getStatus().name(),
+                    a.getAffectedStageIds(),
+                    planVersion == null ? null : planVersion.getVersionNumber(),
+                    a.getCreatedAt(), a.getApprovedAt());
+        }
+    }
+
+    public record PlanVersionView(Long id, int versionNumber, Long amendmentId, Instant createdAt) {
+        public static PlanVersionView of(PlanVersion v) {
+            return new PlanVersionView(v.getId(), v.getVersionNumber(),
+                    v.getAmendment() == null ? null : v.getAmendment().getId(), v.getCreatedAt());
         }
     }
 }

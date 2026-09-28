@@ -42,16 +42,22 @@ public class ApprovalService {
     }
 
     /**
-     * 最终使用批准：要求全部阶段验收完成且不存在活动停工令。
-     * 与停工令签发共用许可行级悲观锁，二者并发时只形成"批准"或"被阻止"一种结果。
+     * 最终使用批准：要求全部阶段验收完成、不存在活动停工令，
+     * 且 expectedPlanVersion 等于当前方案版本（批准只能引用当前方案和有效结果）。
+     * 与停工令签发、变更批准共用许可行级悲观锁，并发时只形成一种结果。
      * 批准记录一经形成不可修改。
      */
     @Transactional
-    public FinalApproval approve(Long permitId) {
+    public FinalApproval approve(Long permitId, int expectedPlanVersion) {
         Permit permit = permitRepository.findByIdForUpdate(permitId)
                 .orElseThrow(() -> new NotFoundException("许可不存在: " + permitId));
         if (finalApprovalRepository.findByPermitId(permitId).isPresent()) {
             throw new BusinessException("许可已最终批准，批准记录不可修改");
+        }
+        int currentPlan = permit.getCurrentPlanVersionNumber();
+        if (currentPlan != expectedPlanVersion) {
+            throw new BusinessException("方案已变更至 v" + currentPlan + "，基于方案 v" + expectedPlanVersion
+                    + " 的批准依据已过期，请按当前方案重新批准");
         }
         long unfinished = stageRepository.countByPermitIdAndStatusNot(permitId, StageStatus.COMPLETED);
         if (unfinished > 0) {
@@ -61,9 +67,9 @@ public class ApprovalService {
         if (activeStopOrders > 0) {
             throw new BusinessException("存在活动停工令，不能最终批准");
         }
-        String basis = buildBasis(permitId);
+        String basis = buildBasis(permitId, currentPlan);
         permit.setStatus(PermitStatus.APPROVED);
-        return finalApprovalRepository.save(new FinalApproval(permit, basis));
+        return finalApprovalRepository.save(new FinalApproval(permit, currentPlan, basis));
     }
 
     /**
@@ -111,9 +117,10 @@ public class ApprovalService {
         return new FinalApprovalBasis(approval, stages, orders);
     }
 
-    private String buildBasis(Long permitId) {
+    private String buildBasis(Long permitId, int planVersionNumber) {
         List<ConstructionStage> stages = stageRepository.findByPermitIdOrderBySeq(permitId);
         StringBuilder basis = new StringBuilder();
+        basis.append("方案版本 v").append(planVersionNumber).append("；");
         basis.append("全部 ").append(stages.size()).append(" 个施工阶段已验收完成：");
         for (ConstructionStage stage : stages) {
             String version = stage.getAcceptedVersionId() == null ? "?"

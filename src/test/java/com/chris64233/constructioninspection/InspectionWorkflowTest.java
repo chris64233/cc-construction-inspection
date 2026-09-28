@@ -84,16 +84,16 @@ class InspectionWorkflowTest {
     void priorStageIncomplete_blocksLaterStageInspection() {
         BusinessException ex = assertThrows(BusinessException.class, () ->
                 inspectionService.submitInspection("SUB-X1", stage2Items.get(0).getId(),
-                        Conclusion.PASS, "张三", "现场照片"));
+                        Conclusion.PASS, "张三", "现场照片", 1, 1));
         assertTrue(ex.getMessage().contains("前置阶段未完成"));
     }
 
     @Test
     void failedInspection_generatesRectification_andBlocksAcceptance() {
         inspectionService.submitInspection("SUB-1", stage1Items.get(0).getId(),
-                Conclusion.PASS, "张三", "合格");
+                Conclusion.PASS, "张三", "合格", 1, 1);
         inspectionService.submitInspection("SUB-2", stage1Items.get(1).getId(),
-                Conclusion.FAIL, "张三", "钢筋间距超标");
+                Conclusion.FAIL, "张三", "钢筋间距超标", 1, 1);
 
         List<Rectification> chain = inspectionService.listRectificationChain(stage1Id);
         assertEquals(1, chain.size());
@@ -106,10 +106,10 @@ class InspectionWorkflowTest {
     @Test
     void rectificationSubmission_closesItemAndCreatesNewReinspectionVersion() {
         inspectionService.submitInspection("SUB-1", stage1Items.get(0).getId(),
-                Conclusion.FAIL, "张三", "地基承载力不足");
+                Conclusion.FAIL, "张三", "地基承载力不足", 1, 1);
         Rectification rectification = inspectionService.listRectificationChain(stage1Id).get(0);
 
-        Rectification closed = inspectionService.submitRectification(rectification.getId(), "已换填处理");
+        Rectification closed = inspectionService.submitRectification(rectification.getId(), "已换填处理", 1);
 
         assertEquals(RectificationStatus.CLOSED, closed.getStatus());
         assertNotNull(closed.getClosedAt());
@@ -121,18 +121,18 @@ class InspectionWorkflowTest {
 
         // 重复提交整改被拒绝
         assertThrows(BusinessException.class,
-                () -> inspectionService.submitRectification(rectification.getId(), "再次提交"));
+                () -> inspectionService.submitRectification(rectification.getId(), "再次提交", 1));
     }
 
     @Test
     void acceptanceRequiresAllItemsPassedOnCurrentVersion_andAllRectificationsClosed() {
         // v1：F1 通过，F2 不通过 → 整改 → 产生 v2
         inspectionService.submitInspection("SUB-1", stage1Items.get(0).getId(),
-                Conclusion.PASS, "张三", "合格");
+                Conclusion.PASS, "张三", "合格", 1, 1);
         inspectionService.submitInspection("SUB-2", stage1Items.get(1).getId(),
-                Conclusion.FAIL, "张三", "不合格");
+                Conclusion.FAIL, "张三", "不合格", 1, 1);
         Rectification rectification = inspectionService.listRectificationChain(stage1Id).get(0);
-        inspectionService.submitRectification(rectification.getId(), "已整改");
+        inspectionService.submitRectification(rectification.getId(), "已整改", 1);
 
         // v2 上尚无检查记录：验收不得基于 v1 的过期结果
         BusinessException ex = assertThrows(BusinessException.class,
@@ -141,9 +141,9 @@ class InspectionWorkflowTest {
 
         // v2 上重新检查全部通过后才能验收
         inspectionService.submitInspection("SUB-3", stage1Items.get(0).getId(),
-                Conclusion.PASS, "李四", "复检合格");
+                Conclusion.PASS, "李四", "复检合格", 1, 2);
         inspectionService.submitInspection("SUB-4", stage1Items.get(1).getId(),
-                Conclusion.PASS, "李四", "复检合格");
+                Conclusion.PASS, "李四", "复检合格", 1, 2);
         var stage = inspectionService.acceptStage(stage1Id);
 
         assertEquals(StageStatus.COMPLETED, stage.getStatus());
@@ -160,18 +160,18 @@ class InspectionWorkflowTest {
     void acceptanceBlockedByOpenRectification_evenWhenCurrentVersionAllPass() {
         // 两个检查项均不通过 → 两个整改项
         inspectionService.submitInspection("SUB-1", stage1Items.get(0).getId(),
-                Conclusion.FAIL, "张三", "问题1");
+                Conclusion.FAIL, "张三", "问题1", 1, 1);
         inspectionService.submitInspection("SUB-2", stage1Items.get(1).getId(),
-                Conclusion.FAIL, "张三", "问题2");
+                Conclusion.FAIL, "张三", "问题2", 1, 1);
         List<Rectification> chain = inspectionService.listRectificationChain(stage1Id);
         assertEquals(2, chain.size());
 
         // 只关闭第一个整改项（产生 v2），第二个仍打开
-        inspectionService.submitRectification(chain.get(0).getId(), "已整改");
+        inspectionService.submitRectification(chain.get(0).getId(), "已整改", 1);
         inspectionService.submitInspection("SUB-3", stage1Items.get(0).getId(),
-                Conclusion.PASS, "李四", "复检合格");
+                Conclusion.PASS, "李四", "复检合格", 1, 2);
         inspectionService.submitInspection("SUB-4", stage1Items.get(1).getId(),
-                Conclusion.PASS, "李四", "复检合格");
+                Conclusion.PASS, "李四", "复检合格", 1, 2);
 
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> inspectionService.acceptStage(stage1Id));
@@ -181,9 +181,9 @@ class InspectionWorkflowTest {
     @Test
     void submissionNoIsIdempotent() {
         InspectionRecord first = inspectionService.submitInspection("SUB-IDEMP",
-                stage1Items.get(0).getId(), Conclusion.PASS, "张三", "合格");
+                stage1Items.get(0).getId(), Conclusion.PASS, "张三", "合格", 1, 1);
         InspectionRecord second = inspectionService.submitInspection("SUB-IDEMP",
-                stage1Items.get(0).getId(), Conclusion.PASS, "张三", "合格");
+                stage1Items.get(0).getId(), Conclusion.PASS, "张三", "合格", 1, 1);
 
         assertEquals(first.getId(), second.getId());
         Long v1Id = inspectionService.listVersions(stage1Id).get(0).getId();
@@ -193,17 +193,17 @@ class InspectionWorkflowTest {
     @Test
     void oneEffectiveConclusionPerItemPerVersion() {
         inspectionService.submitInspection("SUB-A", stage1Items.get(0).getId(),
-                Conclusion.PASS, "张三", "合格");
+                Conclusion.PASS, "张三", "合格", 1, 1);
         BusinessException ex = assertThrows(BusinessException.class, () ->
                 inspectionService.submitInspection("SUB-B", stage1Items.get(0).getId(),
-                        Conclusion.FAIL, "李四", "改判不合格"));
+                        Conclusion.FAIL, "李四", "改判不合格", 1, 1));
         assertTrue(ex.getMessage().contains("已存在生效结论"));
     }
 
     @Test
     void finalApprovalRequiresAllStagesCompleted() {
         BusinessException ex = assertThrows(BusinessException.class,
-                () -> approvalService.approve(permitId));
+                () -> approvalService.approve(permitId, 1));
         assertTrue(ex.getMessage().contains("未完成阶段"));
     }
 
@@ -213,11 +213,11 @@ class InspectionWorkflowTest {
 
         var order = approvalService.issueStopWorkOrder(permitId, "安全隐患");
         BusinessException ex = assertThrows(BusinessException.class,
-                () -> approvalService.approve(permitId));
+                () -> approvalService.approve(permitId, 1));
         assertTrue(ex.getMessage().contains("活动停工令"));
 
         approvalService.liftStopWorkOrder(order.getId());
-        var approval = approvalService.approve(permitId);
+        var approval = approvalService.approve(permitId, 1);
         assertNotNull(approval.getApprovedAt());
         assertTrue(approval.getBasis().contains("基础工程"));
         assertTrue(approval.getBasis().contains("主体结构"));
@@ -226,9 +226,9 @@ class InspectionWorkflowTest {
     @Test
     void approvedRecordIsImmutable_noReapproveNoStopWorkOrder() {
         completeAllStages();
-        approvalService.approve(permitId);
+        approvalService.approve(permitId, 1);
 
-        assertThrows(BusinessException.class, () -> approvalService.approve(permitId));
+        assertThrows(BusinessException.class, () -> approvalService.approve(permitId, 1));
         assertThrows(BusinessException.class,
                 () -> approvalService.issueStopWorkOrder(permitId, "事后停工"));
     }
@@ -236,7 +236,7 @@ class InspectionWorkflowTest {
     @Test
     void approvalBasisQueryReturnsStagesAndAcceptedVersions() {
         completeAllStages();
-        approvalService.approve(permitId);
+        approvalService.approve(permitId, 1);
 
         var basis = approvalService.getApprovalBasis(permitId);
         assertEquals(2, basis.stages().size());
@@ -248,12 +248,12 @@ class InspectionWorkflowTest {
 
     private void completeAllStages() {
         inspectionService.submitInspection("SUB-F1", stage1Items.get(0).getId(),
-                Conclusion.PASS, "张三", "合格");
+                Conclusion.PASS, "张三", "合格", 1, 1);
         inspectionService.submitInspection("SUB-F2", stage1Items.get(1).getId(),
-                Conclusion.PASS, "张三", "合格");
+                Conclusion.PASS, "张三", "合格", 1, 1);
         inspectionService.acceptStage(stage1Id);
         inspectionService.submitInspection("SUB-S1", stage2Items.get(0).getId(),
-                Conclusion.PASS, "张三", "合格");
+                Conclusion.PASS, "张三", "合格", 1, 1);
         inspectionService.acceptStage(stage2Id);
     }
 }

@@ -15,7 +15,7 @@ import jakarta.persistence.UniqueConstraint;
 
 import java.time.Instant;
 
-/** 被检查的工程版本：阶段激活时产生 v1，每次整改提交产生新的复检版本 */
+/** 被检查的工程版本：阶段激活时产生 v1，整改提交产生复检版本，方案变更批准产生变更版本 */
 @Entity
 @Table(name = "work_versions",
         uniqueConstraints = @UniqueConstraint(columnNames = {"stage_id", "version_number"}))
@@ -36,16 +36,23 @@ public class WorkVersion {
     @Column(nullable = false)
     private VersionReason reason;
 
+    /** 产生本工程版本时生效的方案版本 */
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "plan_version_id", nullable = false)
+    private PlanVersion planVersion;
+
     @Column(nullable = false, updatable = false)
     private Instant createdAt = Instant.now();
 
     protected WorkVersion() {
     }
 
-    public WorkVersion(ConstructionStage stage, int versionNumber, VersionReason reason) {
+    public WorkVersion(ConstructionStage stage, int versionNumber, VersionReason reason,
+                       PlanVersion planVersion) {
         this.stage = stage;
         this.versionNumber = versionNumber;
         this.reason = reason;
+        this.planVersion = planVersion;
     }
 
     public Long getId() {
@@ -62,6 +69,10 @@ public class WorkVersion {
 
     public VersionReason getReason() {
         return reason;
+    }
+
+    public PlanVersion getPlanVersion() {
+        return planVersion;
     }
 
     public Instant getCreatedAt() {

@@ -35,7 +35,9 @@ public class InspectionController {
                                           @NotNull Long itemDefinitionId,
                                           @NotNull Conclusion conclusion,
                                           @NotBlank String inspector,
-                                          @NotBlank String evidence) {
+                                          @NotBlank String evidence,
+                                          @NotNull Integer planVersion,
+                                          @NotNull Integer stageVersion) {
     }
 
     @PostMapping("/inspections")
@@ -43,18 +45,19 @@ public class InspectionController {
     public Views.RecordView submitInspection(@Valid @RequestBody SubmitInspectionRequest request) {
         InspectionRecord record = inspectionService.submitInspection(
                 request.submissionNo(), request.itemDefinitionId(), request.conclusion(),
-                request.inspector(), request.evidence());
+                request.inspector(), request.evidence(), request.planVersion(), request.stageVersion());
         return Views.RecordView.of(record);
     }
 
-    public record SubmitRectificationRequest(@NotBlank String note) {
+    public record SubmitRectificationRequest(@NotBlank String note, @NotNull Integer planVersion) {
     }
 
     /** 整改提交：关闭整改项并产生新的复检版本 */
     @PostMapping("/rectifications/{rectificationId}/submit")
     public Views.RectificationView submitRectification(@PathVariable Long rectificationId,
                                                        @Valid @RequestBody SubmitRectificationRequest request) {
-        Rectification rectification = inspectionService.submitRectification(rectificationId, request.note());
+        Rectification rectification = inspectionService.submitRectification(
+                rectificationId, request.note(), request.planVersion());
         return Views.RectificationView.of(rectification);
     }
 

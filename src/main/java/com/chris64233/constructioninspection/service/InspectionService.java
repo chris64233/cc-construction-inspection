@@ -4,6 +4,8 @@ import com.chris64233.constructioninspection.domain.Conclusion;
 import com.chris64233.constructioninspection.domain.ConstructionStage;
 import com.chris64233.constructioninspection.domain.InspectionItemDefinition;
 import com.chris64233.constructioninspection.domain.InspectionRecord;
+import com.chris64233.constructioninspection.domain.Permit;
+import com.chris64233.constructioninspection.domain.PlanVersion;
 import com.chris64233.constructioninspection.domain.Rectification;
 import com.chris64233.constructioninspection.domain.RectificationStatus;
 import com.chris64233.constructioninspection.domain.StageStatus;
@@ -12,6 +14,7 @@ import com.chris64233.constructioninspection.domain.WorkVersion;
 import com.chris64233.constructioninspection.repository.ConstructionStageRepository;
 import com.chris64233.constructioninspection.repository.InspectionItemDefinitionRepository;
 import com.chris64233.constructioninspection.repository.InspectionRecordRepository;
+import com.chris64233.constructioninspection.repository.PlanVersionRepository;
 import com.chris64233.constructioninspection.repository.RectificationRepository;
 import com.chris64233.constructioninspection.repository.WorkVersionRepository;
 import com.chris64233.constructioninspection.support.BusinessException;
@@ -33,17 +36,20 @@ public class InspectionService {
     private final WorkVersionRepository versionRepository;
     private final InspectionRecordRepository recordRepository;
     private final RectificationRepository rectificationRepository;
+    private final PlanVersionRepository planVersionRepository;
 
     public InspectionService(ConstructionStageRepository stageRepository,
                              InspectionItemDefinitionRepository itemDefinitionRepository,
                              WorkVersionRepository versionRepository,
                              InspectionRecordRepository recordRepository,
-                             RectificationRepository rectificationRepository) {
+                             RectificationRepository rectificationRepository,
+                             PlanVersionRepository planVersionRepository) {
         this.stageRepository = stageRepository;
         this.itemDefinitionRepository = itemDefinitionRepository;
         this.versionRepository = versionRepository;
         this.recordRepository = recordRepository;
         this.rectificationRepository = rectificationRepository;
+        this.planVersionRepository = planVersionRepository;
     }
 
     /**
@@ -51,27 +57,35 @@ public class InspectionService {
      * <ul>
      *   <li>submissionNo 为幂等提交号：重复提交返回首次记录，不产生新数据；</li>
      *   <li>仅当阶段处于 ACTIVE（前置阶段均已验收）时可提交；</li>
+     *   <li>expectedPlanVersion / expectedStageVersion 为提交所基于的方案版本与工程版本，
+     *       与当前版本不一致时拒绝过期操作（如变更批准后基于旧方案的提交）；</li>
      *   <li>结论落在阶段当前工程版本上，同一检查项同一版本只允许一条生效结论；</li>
      *   <li>结论不通过时自动生成整改项。</li>
      * </ul>
      */
     @Transactional
     public InspectionRecord submitInspection(String submissionNo, Long itemDefinitionId, Conclusion conclusion,
-                                             String inspector, String evidence) {
+                                             String inspector, String evidence,
+                                             int expectedPlanVersion, int expectedStageVersion) {
         var existing = recordRepository.findBySubmissionNo(submissionNo);
         if (existing.isPresent()) {
             return existing.get();
         }
         InspectionItemDefinition itemDefinition = itemDefinitionRepository.findById(itemDefinitionId)
                 .orElseThrow(() -> new NotFoundException("检查项定义不存在: " + itemDefinitionId));
-        // 与整改关闭、阶段验收共用阶段行锁，保证验收不会读到过期结论
+        // 与整改关闭、阶段验收、变更批准共用阶段行锁，保证验收不会读到过期结论
         ConstructionStage stage = stageRepository.findByIdForUpdate(itemDefinition.getStage().getId())
                 .orElseThrow(() -> new NotFoundException("施工阶段不存在"));
         if (stage.getStatus() != StageStatus.ACTIVE) {
             throw new BusinessException("前置阶段未完成，阶段[" + stage.getName() + "]当前不可申请检查");
         }
+        rejectIfPlanStale(stage.getPermit(), expectedPlanVersion);
         WorkVersion version = versionRepository.findTopByStageIdOrderByVersionNumberDesc(stage.getId())
                 .orElseThrow(() -> new BusinessException("阶段缺少工程版本"));
+        if (version.getVersionNumber() != expectedStageVersion) {
+            throw new BusinessException("阶段[" + stage.getName() + "]当前工程版本为 v" + version.getVersionNumber()
+                    + "，基于 v" + expectedStageVersion + " 的检查提交已过期，请按当前版本重新提交");
+        }
         if (recordRepository.existsByVersionIdAndItemDefinitionId(version.getId(), itemDefinitionId)) {
             throw new BusinessException("该检查项在当前版本 v" + version.getVersionNumber() + " 已存在生效结论");
         }
@@ -91,9 +105,10 @@ public class InspectionService {
 
     /**
      * 整改提交：关闭整改项，并为阶段产生新的复检版本（整改链的一环）。
+     * 复检版本归属提交时的当前方案版本；方案已变更时拒绝过期提交。
      */
     @Transactional
-    public Rectification submitRectification(Long rectificationId, String note) {
+    public Rectification submitRectification(Long rectificationId, String note, int expectedPlanVersion) {
         Rectification rectification = rectificationRepository.findById(rectificationId)
                 .orElseThrow(() -> new NotFoundException("整改项不存在: " + rectificationId));
         ConstructionStage stage = stageRepository.findByIdForUpdate(rectification.getStage().getId())
@@ -101,12 +116,14 @@ public class InspectionService {
         if (stage.getStatus() != StageStatus.ACTIVE) {
             throw new BusinessException("阶段[" + stage.getName() + "]已验收或不可整改");
         }
+        rejectIfPlanStale(stage.getPermit(), expectedPlanVersion);
         if (rectification.getStatus() == RectificationStatus.CLOSED) {
             throw new BusinessException("整改项已关闭，不可重复提交");
         }
         int nextNumber = versionRepository.findMaxVersionNumber(stage.getId()) + 1;
         WorkVersion newVersion = versionRepository.saveAndFlush(
-                new WorkVersion(stage, nextNumber, VersionReason.RECTIFICATION));
+                new WorkVersion(stage, nextNumber, VersionReason.RECTIFICATION,
+                        currentPlanVersion(stage.getPermit())));
         rectification.close(note, newVersion);
         return rectification;
     }
@@ -145,13 +162,32 @@ public class InspectionService {
         }
         stage.setStatus(StageStatus.COMPLETED);
         stage.setAcceptedVersionId(currentVersion.getId());
-        // 激活下一个阶段并生成其初始工程版本
-        stageRepository.findByPermitIdAndSeq(stage.getPermit().getId(), stage.getSeq() + 1)
+        // 激活下一个阶段并生成其初始工程版本（归属当前方案版本）；
+        // 仅当下一阶段处于 PENDING 时激活——变更回退后重验收时，未受影响的后续阶段保持原状
+        Permit permit = stage.getPermit();
+        stageRepository.findByPermitIdAndSeq(permit.getId(), stage.getSeq() + 1)
+                .filter(next -> next.getStatus() == StageStatus.PENDING)
                 .ifPresent(next -> {
                     next.setStatus(StageStatus.ACTIVE);
-                    versionRepository.save(new WorkVersion(next, 1, VersionReason.INITIAL));
+                    versionRepository.save(new WorkVersion(next, 1, VersionReason.INITIAL,
+                            currentPlanVersion(permit)));
                 });
         return stage;
+    }
+
+    /** 方案版本过期校验：变更批准后，基于旧方案版本的操作一律拒绝 */
+    private void rejectIfPlanStale(Permit permit, int expectedPlanVersion) {
+        int current = permit.getCurrentPlanVersionNumber();
+        if (current != expectedPlanVersion) {
+            throw new BusinessException("方案已变更至 v" + current + "，基于方案 v" + expectedPlanVersion
+                    + " 的操作已过期，请按新方案重新发起");
+        }
+    }
+
+    private PlanVersion currentPlanVersion(Permit permit) {
+        return planVersionRepository.findByPermitIdAndVersionNumber(
+                        permit.getId(), permit.getCurrentPlanVersionNumber())
+                .orElseThrow(() -> new BusinessException("许可缺少当前方案版本"));
     }
 
     @Transactional(readOnly = true)

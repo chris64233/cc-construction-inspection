@@ -3,12 +3,14 @@ package com.chris64233.constructioninspection.service;
 import com.chris64233.constructioninspection.domain.ConstructionStage;
 import com.chris64233.constructioninspection.domain.InspectionItemDefinition;
 import com.chris64233.constructioninspection.domain.Permit;
+import com.chris64233.constructioninspection.domain.PlanVersion;
 import com.chris64233.constructioninspection.domain.StageStatus;
 import com.chris64233.constructioninspection.domain.VersionReason;
 import com.chris64233.constructioninspection.domain.WorkVersion;
 import com.chris64233.constructioninspection.repository.ConstructionStageRepository;
 import com.chris64233.constructioninspection.repository.InspectionItemDefinitionRepository;
 import com.chris64233.constructioninspection.repository.PermitRepository;
+import com.chris64233.constructioninspection.repository.PlanVersionRepository;
 import com.chris64233.constructioninspection.repository.WorkVersionRepository;
 import com.chris64233.constructioninspection.support.BusinessException;
 import com.chris64233.constructioninspection.support.NotFoundException;
@@ -24,15 +26,18 @@ public class PermitService {
     private final ConstructionStageRepository stageRepository;
     private final InspectionItemDefinitionRepository itemDefinitionRepository;
     private final WorkVersionRepository versionRepository;
+    private final PlanVersionRepository planVersionRepository;
 
     public PermitService(PermitRepository permitRepository,
                          ConstructionStageRepository stageRepository,
                          InspectionItemDefinitionRepository itemDefinitionRepository,
-                         WorkVersionRepository versionRepository) {
+                         WorkVersionRepository versionRepository,
+                         PlanVersionRepository planVersionRepository) {
         this.permitRepository = permitRepository;
         this.stageRepository = stageRepository;
         this.itemDefinitionRepository = itemDefinitionRepository;
         this.versionRepository = versionRepository;
+        this.planVersionRepository = planVersionRepository;
     }
 
     public record ItemDef(String code, String name) {
@@ -43,7 +48,7 @@ public class PermitService {
 
     /**
      * 创建许可：按定义顺序建立施工阶段与每阶段所需检查项。
-     * 第一个阶段置为 ACTIVE 并生成初始工程版本 v1，其余阶段 PENDING。
+     * 生成初始方案版本 v1；第一个阶段置为 ACTIVE 并生成初始工程版本 v1，其余阶段 PENDING。
      */
     @Transactional
     public Permit createPermit(String name, List<StageDef> stageDefs) {
@@ -51,6 +56,7 @@ public class PermitService {
             throw new BusinessException("许可至少定义一个施工阶段");
         }
         Permit permit = permitRepository.save(new Permit(name));
+        PlanVersion planV1 = planVersionRepository.save(new PlanVersion(permit, 1, null));
         int seq = 1;
         for (StageDef def : stageDefs) {
             if (def.items() == null || def.items().isEmpty()) {
@@ -63,7 +69,7 @@ public class PermitService {
                 itemDefinitionRepository.save(new InspectionItemDefinition(stage, item.code(), item.name()));
             }
             if (first) {
-                versionRepository.save(new WorkVersion(stage, 1, VersionReason.INITIAL));
+                versionRepository.save(new WorkVersion(stage, 1, VersionReason.INITIAL, planV1));
             }
             seq++;
         }

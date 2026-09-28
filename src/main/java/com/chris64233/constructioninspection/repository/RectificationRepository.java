@@ -10,5 +10,7 @@ public interface RectificationRepository extends JpaRepository<Rectification, Lo
 
     long countByStageIdAndStatus(Long stageId, RectificationStatus status);
 
+    List<Rectification> findByStageIdAndStatus(Long stageId, RectificationStatus status);
+
     List<Rectification> findByStageIdOrderById(Long stageId);
 }
