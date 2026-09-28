@@ -16,66 +16,65 @@ import jakarta.persistence.UniqueConstraint;
 import java.time.Instant;
 
 /**
- * 被检查的工程版本：阶段激活时产生 v1，每次整改提交产生新的复检版本，
- * 方案变更批准后受影响阶段产生 AMENDMENT 版本。
- * planVersionNumber 为该工程版本所属的方案版本快照：方案变更后新版本属于新方案，
- * 旧版本及其检查结果即告失效。
+ * 方案版本（许可级）。许可创建时生成 v1（INITIAL）；
+ * 每次方案变更批准后产生 v2、v3…（AMENDMENT），并反向关联批准它的变更单。
  */
 @Entity
-@Table(name = "work_versions",
-        uniqueConstraints = @UniqueConstraint(columnNames = {"stage_id", "version_number"}))
-public class WorkVersion {
+@Table(name = "plan_versions",
+        uniqueConstraints = @UniqueConstraint(columnNames = {"permit_id", "version_number"}))
+public class PlanVersion {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "stage_id", nullable = false)
-    private ConstructionStage stage;
+    @JoinColumn(name = "permit_id", nullable = false)
+    private Permit permit;
 
     @Column(name = "version_number", nullable = false)
     private int versionNumber;
 
-    /** 该工程版本所属的方案版本号 */
-    @Column(name = "plan_version_number", nullable = false)
-    private int planVersionNumber;
-
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
-    private VersionReason reason;
+    private PlanVersionReason reason;
+
+    /** AMENDMENT 版本由此变更单批准产生；INITIAL 版本为 null */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "amendment_id")
+    private Amendment amendment;
 
     @Column(nullable = false, updatable = false)
     private Instant createdAt = Instant.now();
 
-    protected WorkVersion() {
+    protected PlanVersion() {
     }
 
-    public WorkVersion(ConstructionStage stage, int versionNumber, int planVersionNumber, VersionReason reason) {
-        this.stage = stage;
+    public PlanVersion(Permit permit, int versionNumber, PlanVersionReason reason, Amendment amendment) {
+        this.permit = permit;
         this.versionNumber = versionNumber;
-        this.planVersionNumber = planVersionNumber;
         this.reason = reason;
+        this.amendment = amendment;
     }
 
     public Long getId() {
         return id;
     }
 
-    public ConstructionStage getStage() {
-        return stage;
+    public Permit getPermit() {
+        return permit;
     }
 
     public int getVersionNumber() {
         return versionNumber;
     }
 
-    public int getPlanVersionNumber() {
-        return planVersionNumber;
+    public PlanVersionReason getReason() {
+        return reason;
     }
 
-    public VersionReason getReason() {
-        return reason;
+    public Amendment getAmendment() {
+        return amendment;
     }
 
     public Instant getCreatedAt() {

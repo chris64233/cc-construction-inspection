@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -41,19 +42,26 @@ public class ApprovalController {
         return Views.StopWorkOrderView.of(approvalService.liftStopWorkOrder(orderId));
     }
 
-    public record FinalApprovalView(Long id, Long permitId, Instant approvedAt, String basis) {
+    public record FinalApprovalView(Long id, Long permitId, Instant approvedAt,
+                                    int planVersionNumber, String basis) {
     }
 
-    /** 最终使用批准 */
+    /**
+     * 最终使用批准。
+     * expectedPlanVersionNumber 为可选并发保护参数：方案在批准期间被变更时拒绝过期操作。
+     */
     @PostMapping("/permits/{permitId}/final-approval")
     @ResponseStatus(HttpStatus.CREATED)
-    public FinalApprovalView approve(@PathVariable Long permitId) {
-        FinalApproval approval = approvalService.approve(permitId);
-        return new FinalApprovalView(approval.getId(), permitId, approval.getApprovedAt(), approval.getBasis());
+    public FinalApprovalView approve(@PathVariable Long permitId,
+                                     @RequestParam(required = false) Integer expectedPlanVersionNumber) {
+        FinalApproval approval = approvalService.approve(permitId, expectedPlanVersionNumber);
+        return new FinalApprovalView(approval.getId(), permitId, approval.getApprovedAt(),
+                approval.getPlanVersionNumber(), approval.getBasis());
     }
 
     public record FinalApprovalBasisView(Long id, Long permitId, Instant approvedAt, String basis,
-                                         List<ApprovalService.StageAcceptance> stages,
+                                         int planVersionNumber,
+                                         List<ApprovalService.StageAcceptanceView> stages,
                                          List<Views.StopWorkOrderView> stopWorkOrders) {
     }
 
@@ -63,7 +71,7 @@ public class ApprovalController {
         ApprovalService.FinalApprovalBasis basis = approvalService.getApprovalBasis(permitId);
         FinalApproval approval = basis.approval();
         return new FinalApprovalBasisView(approval.getId(), permitId, approval.getApprovedAt(),
-                approval.getBasis(), basis.stages(),
+                approval.getBasis(), approval.getPlanVersionNumber(), basis.stages(),
                 basis.stopWorkOrders().stream().map(Views.StopWorkOrderView::of).toList());
     }
 }

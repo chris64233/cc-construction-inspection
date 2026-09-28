@@ -53,6 +53,10 @@ public class Rectification {
 
     private Instant closedAt;
 
+    /** 因方案变更被取消时的方案版本号；未取消为 null */
+    @Column(name = "cancelled_by_plan_version")
+    private Integer cancelledByPlanVersion;
+
     protected Rectification() {
     }
 
@@ -65,6 +69,13 @@ public class Rectification {
         this.status = RectificationStatus.CLOSED;
         this.note = note;
         this.resultVersion = resultVersion;
+        this.closedAt = Instant.now();
+    }
+
+    /** 方案变更影响本阶段：未关闭整改项随旧方案结果一并取消 */
+    public void cancel(int byPlanVersionNumber) {
+        this.status = RectificationStatus.CANCELLED;
+        this.cancelledByPlanVersion = byPlanVersionNumber;
         this.closedAt = Instant.now();
     }
 
@@ -98,5 +109,9 @@ public class Rectification {
 
     public Instant getClosedAt() {
         return closedAt;
+    }
+
+    public Integer getCancelledByPlanVersion() {
+        return cancelledByPlanVersion;
     }
 }

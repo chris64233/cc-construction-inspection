@@ -26,6 +26,10 @@ public class Permit {
     @Column(nullable = false)
     private PermitStatus status = PermitStatus.IN_PROGRESS;
 
+    /** 当前方案版本号：初始为 1，每次方案变更批准后 +1。并发操作据此识别过期请求 */
+    @Column(name = "current_plan_version_number", nullable = false)
+    private int currentPlanVersionNumber = 1;
+
     @Column(nullable = false, updatable = false)
     private Instant createdAt = Instant.now();
 
@@ -50,6 +54,14 @@ public class Permit {
 
     public void setStatus(PermitStatus status) {
         this.status = status;
+    }
+
+    public int getCurrentPlanVersionNumber() {
+        return currentPlanVersionNumber;
+    }
+
+    public void setCurrentPlanVersionNumber(int currentPlanVersionNumber) {
+        this.currentPlanVersionNumber = currentPlanVersionNumber;
     }
 
     public Instant getCreatedAt() {

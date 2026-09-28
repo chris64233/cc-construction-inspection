@@ -61,14 +61,23 @@ class ConcurrencyRulesTest {
     StopWorkOrderRepository stopWorkOrderRepository;
     @Autowired
     FinalApprovalRepository finalApprovalRepository;
+    @Autowired
+    com.chris64233.constructioninspection.repository.StageAcceptanceRepository acceptanceRepository;
+    @Autowired
+    com.chris64233.constructioninspection.repository.PlanVersionRepository planVersionRepository;
+    @Autowired
+    com.chris64233.constructioninspection.repository.AmendmentRepository amendmentRepository;
 
     @BeforeEach
     @AfterEach
     void cleanup() {
+        acceptanceRepository.deleteAll();
         rectificationRepository.deleteAll();
         recordRepository.deleteAll();
         versionRepository.deleteAll();
+        planVersionRepository.deleteAll();
         itemDefinitionRepository.deleteAll();
+        amendmentRepository.deleteAll();
         stageRepository.deleteAll();
         stopWorkOrderRepository.deleteAll();
         finalApprovalRepository.deleteAll();

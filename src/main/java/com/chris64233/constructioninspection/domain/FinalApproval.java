@@ -30,6 +30,10 @@ public class FinalApproval {
     @Column(nullable = false, updatable = false)
     private Instant approvedAt = Instant.now();
 
+    /** 批准依据的方案版本号（批准时点的当前方案） */
+    @Column(name = "plan_version_number", nullable = false, updatable = false)
+    private int planVersionNumber;
+
     /** 批准依据快照：各阶段验收版本及停工令状态 */
     @Column(nullable = false, length = 4000)
     private String basis;
@@ -37,8 +41,9 @@ public class FinalApproval {
     protected FinalApproval() {
     }
 
-    public FinalApproval(Permit permit, String basis) {
+    public FinalApproval(Permit permit, int planVersionNumber, String basis) {
         this.permit = permit;
+        this.planVersionNumber = planVersionNumber;
         this.basis = basis;
     }
 
@@ -52,6 +57,10 @@ public class FinalApproval {
 
     public Instant getApprovedAt() {
         return approvedAt;
+    }
+
+    public int getPlanVersionNumber() {
+        return planVersionNumber;
     }
 
     public String getBasis() {

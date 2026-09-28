@@ -52,6 +52,14 @@ public class InspectionRecord {
     @Column(nullable = false, length = 2000)
     private String evidence;
 
+    /** 失效标记：false 为当前有效结果；方案变更使受影响阶段的旧结果置为 true（记录保留可追溯） */
+    @Column(name = "invalidated", nullable = false)
+    private boolean invalidated = false;
+
+    /** 使本结果失效的方案版本号；未失效为 null */
+    @Column(name = "invalidated_by_plan_version")
+    private Integer invalidatedByPlanVersion;
+
     @Column(nullable = false, updatable = false)
     private Instant createdAt = Instant.now();
 
@@ -66,6 +74,12 @@ public class InspectionRecord {
         this.conclusion = conclusion;
         this.inspector = inspector;
         this.evidence = evidence;
+    }
+
+    /** 方案变更批准时调用：记录本结果因哪个新方案版本失效 */
+    public void invalidate(int byPlanVersionNumber) {
+        this.invalidated = true;
+        this.invalidatedByPlanVersion = byPlanVersionNumber;
     }
 
     public Long getId() {
@@ -94,6 +108,14 @@ public class InspectionRecord {
 
     public String getEvidence() {
         return evidence;
+    }
+
+    public boolean isInvalidated() {
+        return invalidated;
+    }
+
+    public Integer getInvalidatedByPlanVersion() {
+        return invalidatedByPlanVersion;
     }
 
     public Instant getCreatedAt() {

@@ -35,7 +35,8 @@ public class InspectionController {
                                           @NotNull Long itemDefinitionId,
                                           @NotNull Conclusion conclusion,
                                           @NotBlank String inspector,
-                                          @NotBlank String evidence) {
+                                          @NotBlank String evidence,
+                                          Long expectedWorkVersionId) {
     }
 
     @PostMapping("/inspections")
@@ -43,7 +44,7 @@ public class InspectionController {
     public Views.RecordView submitInspection(@Valid @RequestBody SubmitInspectionRequest request) {
         InspectionRecord record = inspectionService.submitInspection(
                 request.submissionNo(), request.itemDefinitionId(), request.conclusion(),
-                request.inspector(), request.evidence());
+                request.inspector(), request.evidence(), request.expectedWorkVersionId());
         return Views.RecordView.of(record);
     }
 
@@ -84,6 +85,14 @@ public class InspectionController {
     public List<Views.RectificationView> rectifications(@PathVariable Long stageId) {
         return inspectionService.listRectificationChain(stageId).stream()
                 .map(Views.RectificationView::of)
+                .toList();
+    }
+
+    /** 阶段验收历史（每次验收一条，关联方案版本与工程版本） */
+    @GetMapping("/stages/{stageId}/acceptances")
+    public List<Views.AcceptanceView> acceptances(@PathVariable Long stageId) {
+        return inspectionService.listAcceptanceHistory(stageId).stream()
+                .map(Views.AcceptanceView::of)
                 .toList();
     }
 }
